@@ -1,0 +1,188 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CHATBOT_STATS",
+      "label": "ChatBot Stats PostgreSQL",
+      "description": "PostgreSQL data source for BCETD analytics",
+      "type": "datasource",
+      "pluginId": "postgres",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Daily query volume",
+      "description": "Total queries per day with answered/unanswered breakdown",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 0 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT day AS time, total_queries AS \"Total\", answered AS \"Answered\", unanswered AS \"Unanswered\" FROM v_daily_volume ORDER BY day;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "auto" },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Answered" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Unanswered" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "title": "Success rate",
+      "description": "Percentage of queries that received a substantive answer",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE was_answered) / NULLIF(COUNT(*), 0), 1) AS \"Success %\" FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days';",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 60 },
+              { "color": "green", "value": 80 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Query categories (last 30 days)",
+      "description": "Breakdown of query types",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT category, count FROM v_category_breakdown;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Average response time (ms)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 8 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(AVG(response_ms)) AS \"Avg ms\" FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days' AND was_answered = TRUE;",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3000 },
+              { "color": "red", "value": 8000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Total queries (last 7 days)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 8 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Queries\" FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days';",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Peak usage hours (last 7 days)",
+      "description": "Query distribution by hour of day",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT hour_of_day::TEXT || ':00' AS \"Hour\", query_count AS \"Queries\" FROM v_hourly_pattern ORDER BY hour_of_day;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Most referenced documents",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT document_name AS \"Document\", reference_count AS \"References\", last_referenced AS \"Last Used\" FROM v_top_documents LIMIT 10;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Failure analysis (last 30 days)",
+      "description": "Breakdown of why queries failed",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT failure_type, count FROM v_failure_analysis;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Frequently repeated questions",
+      "description": "Query hashes asked 3+ times — indicates knowledge gaps or popular topics",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 20 },
+      "datasource": { "uid": "${DS_CHATBOT_STATS}" },
+      "targets": [
+        {
+          "rawSql": "SELECT SUBSTRING(query_hash, 1, 12) || '...' AS \"Hash\", ask_count AS \"Times Asked\", typical_category AS \"Category\", avg_score AS \"Avg Score\", ever_answered AS \"Answered?\", first_asked AS \"First\", last_asked AS \"Last\" FROM v_repeated_questions LIMIT 15;",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["BCETD", "Analytics", "Member4"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "Europe/Bucharest",
+  "title": "BCETD Chatbot Analytics",
+  "uid": "bcetd-analytics-main",
+  "version": 1
+}

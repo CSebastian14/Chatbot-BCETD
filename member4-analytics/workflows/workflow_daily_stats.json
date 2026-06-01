@@ -1,0 +1,156 @@
+{
+  "name": "BCETD - Daily Stats Computation (Scheduled)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "d3a87eb9-d080-48df-89bf-bfd584bf3144",
+      "name": "Daily at 00:05",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -16
+      ],
+      "notes": "Runs every day at 00:05 to compute yesterday's aggregated stats and purge data beyond retention"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT compute_daily_stats(CURRENT_DATE - INTERVAL '1 day');",
+        "options": {}
+      },
+      "id": "8ac4541d-ed39-47c7-b13f-c6bc4f5d67e7",
+      "name": "Compute Yesterday Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        -128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      },
+      "notes": "Calls the compute_daily_stats() function to aggregate yesterday's data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT purge_old_data(90);",
+        "options": {}
+      },
+      "id": "9e91bc07-7deb-463d-af01-051a4ce2ceb4",
+      "name": "Purge Data > 90 Days",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        -128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      },
+      "notes": "Deletes raw query_logs older than 90 days. daily_stats (aggregated) are kept indefinitely."
+    },
+    {
+      "parameters": {
+        "jsCode": "const stats = $('Compute Yesterday Stats').first().json;\nconst purged = $('Purge Data > 90 Days').first().json;\nconsole.log(`Daily maintenance complete. Purge result: ${JSON.stringify(purged)}`);\nreturn [{ json: { status: 'complete', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "d36e15e4-a9bb-42c6-8505-be8604a56fca",
+      "name": "Maintenance Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily at 00:05": {
+      "main": [
+        [
+          {
+            "node": "Compute Yesterday Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Yesterday Stats": {
+      "main": [
+        [
+          {
+            "node": "Purge Data > 90 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Purge Data > 90 Days": {
+      "main": [
+        [
+          {
+            "node": "Maintenance Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d37ad081-36fe-4cce-b6ab-cd63210b7f39",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "60f0e9895ac00a3358b9443ed8c374cee94610b5021ba8b8b2cad8a2c24f2fc4"
+  },
+  "id": "j8GT2AxGUsdGaDWk",
+  "tags": [
+    {
+      "updatedAt": "2026-05-09T19:23:29.425Z",
+      "createdAt": "2026-05-09T19:23:29.425Z",
+      "id": "F0c2hs47VjBfKTV4",
+      "name": "Analytics"
+    },
+    {
+      "updatedAt": "2026-05-09T19:23:29.380Z",
+      "createdAt": "2026-05-09T19:23:29.380Z",
+      "id": "NLELoZzhCG4UUh8k",
+      "name": "Member4"
+    },
+    {
+      "updatedAt": "2026-05-09T19:25:42.289Z",
+      "createdAt": "2026-05-09T19:25:42.289Z",
+      "id": "Q18ZwydUz1O9Bn2q",
+      "name": "Scheduled"
+    },
+    {
+      "updatedAt": "2026-05-09T19:12:45.112Z",
+      "createdAt": "2026-05-09T19:12:45.112Z",
+      "id": "Y96UPPQ6fwSD5LwH",
+      "name": "BCETD"
+    }
+  ]
+}
