@@ -1,0 +1,470 @@
+{
+  "name": "Student Query Pipeline-M2",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "5927c22e-e633-41d1-82f2-7ff9371a8da9",
+              "leftValue": "={{ $json.is_empty }}",
+              "rightValue": "   is empty",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6b03a8cc-f23c-4847-ae66-fe8e3e1470ea",
+      "name": "Empty Query Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        144
+      ],
+      "notes": "Routes empty queries directly to error response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════\n// n8n Code node — \"Format Response + Analytics\"\n//\n// PURPOSE\n//   Receives raw AI Agent2 output. Produces TWO items:\n//     [0] response  → consumed by \"Send Response to Student2\" webhook\n//     [1] analytics → consumed by \"Analytics Branch (→ Member 4)\"\n//\n// STABLE CONTRACT EMITTED FOR THE PYTHON BACKEND\n//   {\n//     answer:    str,                                  // markdown, sources stripped\n//     sources:   list[{label, url, type:\"link\"|\"file\"}],\n//     used_tool: bool,\n//     response_time_ms: int\n//   }\n// ════════════════════════════════════════════════════════════════\n\nconst validationOutput = $input.first().json;\n\n// ── 1. Extract LLM answer (handle multiple possible shapes) ──\nlet llmAnswer = '';\nif (validationOutput.validated_answer && validationOutput.validated_answer.trim()) {\n  llmAnswer = validationOutput.validated_answer;\n} else if (validationOutput.output && typeof validationOutput.output === 'string') {\n  llmAnswer = validationOutput.output;\n} else if (validationOutput.text) {\n  llmAnswer = validationOutput.text;\n} else {\n  try {\n    llmAnswer = $('AI Agent2').first().json.output || 'Răspuns indisponibil';\n  } catch (e) {\n    llmAnswer = 'Răspuns indisponibil';\n  }\n}\nllmAnswer = String(llmAnswer).trim();\n\n// ── 2. Extract sources from the LLM text ──\n//\n// Format expected from the agent: 📄 **Sursă:** [Label](URL)\n// Also tolerates: 📄 Sursa: filename.pdf, 📄 Surse: a.pdf, b.pdf\nconst sources = [];\nconst seen = new Set();\n\nconst sourceLineRegex = /📄\\s*\\*{0,2}\\s*Surs[aăe]?\\s*\\*{0,2}\\s*:?\\s*(.+?)(?:\\n|$)/gi;\nconst markdownLinkRegex = /\\[([^\\]]+)\\]\\(([^)]+)\\)/g;\n\nfor (const match of llmAnswer.matchAll(sourceLineRegex)) {\n  const lineContent = match[1].trim();\n\n  // Try markdown links first\n  const links = [...lineContent.matchAll(markdownLinkRegex)];\n\n  if (links.length > 0) {\n    for (const link of links) {\n      const url = link[2].trim();\n      const label = link[1].trim() || 'Sursă oficială';\n      if (url && !seen.has(url)) {\n        seen.add(url);\n        sources.push({ label, url, type: 'link' });\n      }\n    }\n  } else {\n    // Plain text — could be filename(s) separated by comma/semicolon\n    const items = lineContent\n      .split(/[,;]/)\n      .map(s => s.replace(/\\*+/g, '').trim())\n      .filter(s => s.length > 2);\n\n    for (const item of items) {\n      if (seen.has(item)) continue;\n      seen.add(item);\n      if (/^https?:\\/\\//i.test(item)) {\n        sources.push({ label: 'Pagină oficială', url: item, type: 'link' });\n      } else {\n        sources.push({ label: item, url: null, type: 'file' });\n      }\n    }\n  }\n}\n\n// ── 3. Strip source lines from the answer to avoid duplication in UI ──\nconst cleanAnswer = llmAnswer\n  .replace(sourceLineRegex, '')\n  .trim()\n  .replace(/\\n{3,}/g, '\\n\\n');\n\n// ── 4. Metadata ──\nconst startTime = $('Parse Request2').first().json.start_time;\nconst responseTime = Date.now() - startTime;\nconst query = $('Parse Request2').first().json.query;\nconst sessionId = $('Parse Request2').first().json.session_id;\nconst usedTool = sources.length > 0;\n\nconst crypto = require('crypto');\nconst queryHash = crypto\n  .createHash('sha256')\n  .update(query.toLowerCase().trim())\n  .digest('hex');\n\n// ── 5. Outputs ──\nreturn [\n  {\n    json: {\n      type: 'response',\n      answer: cleanAnswer,\n      sources: sources,\n      used_tool: usedTool,\n      response_time_ms: responseTime,\n    },\n  },\n  {\n    json: {\n      type: 'analytics',\n      query_hash: queryHash,\n      category: 'ACADEMIC',\n      used_tool: usedTool,\n      response_ms: responseTime,\n      docs_matched: sources.map(s => s.url || s.label),\n      was_answered: true,\n      session_id: sessionId,\n      created_at: new Date().toISOString(),\n    },\n  },\n];"
+      },
+      "id": "fd63c1f7-5c43-4cc3-ab8b-5eaba8caef94",
+      "name": "Format Response + Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        112
+      ],
+      "notes": "Formats the final response with source citations. Also prepares an analytics payload for async logging (Member 4's branch)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "f1f29685-0c21-4359-9ec1-842b8023e744",
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "response",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f9c1654a-c8b1-456f-bf2d-1acbe1e304fd",
+      "name": "Split Response / Analytics",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        160
+      ],
+      "notes": "Splits the output: 'response' goes to webhook reply, 'analytics' goes to Member 4's async logging branch"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ANALYTICS BRANCH (Async — does not block response)\n// This data goes to Member 4's PostgreSQL logging workflow\nreturn [$input.first()];"
+      },
+      "id": "30158636-af36-40b8-8d4c-6c9a71590348",
+      "name": "Analytics Branch (→ Member 4)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        336
+      ],
+      "notes": "Passes analytics payload to Member 4's PostgreSQL logging sub-workflow. Runs async — never delays the student's response."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $json.rejection_message || 'Vă rog să introduceți o întrebare.', sources: [], confidence: 0 }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "848f2441-8e1a-4fa4-8237-a3d455c92cad",
+      "name": "Empty Query Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "notes": "Returned for empty/missing query strings"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputJson = $input.first().json;\nlet body = inputJson.body || inputJson;\n\nif (typeof body === 'string') {\n  try { body = JSON.parse(body); } catch (e) { body = {}; }\n}\n\nconst query = String(body.query || body.message || '').trim();\nconst sessionId = String(body.session_id || 'anonymous');\n\nif (!query || query.length < 1) {\n  return [{\n    json: {\n      query: '',\n      chatInput: '',\n      session_id: sessionId,\n      start_time: Date.now(),\n      is_empty: true\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    query: query,\n    chatInput: query,\n    query_original: query,\n    session_id: sessionId,\n    start_time: Date.now(),\n    is_empty: false\n  }\n}];"
+      },
+      "id": "eb03454b-ee1c-467c-b6d1-7eec49652768",
+      "name": "Parse Request2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        144
+      ],
+      "notes": "Extracts query and session_id from the POST body. Records start time for latency tracking."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "35395657-3bda-430c-8ddf-d825178e11df",
+      "name": "Send Response to Student2",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        160
+      ],
+      "executeOnce": false,
+      "retryOnFail": false,
+      "alwaysOutputData": false,
+      "notes": "Returns JSON response to the frontend chat UI"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "51f555a6-eaa6-4a78-9624-ef0ff061d97e",
+      "name": "Chat Webhook3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -608,
+        144
+      ],
+      "webhookId": "bcetd-chat-endpoint",
+      "notes": "POST /webhook/chat — receives {\"query\": \"student question\", \"session_id\": \"uuid\"} from the frontend"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=={{ $json.query || $json.chatInput }}",
+        "options": {
+          "systemMessage": "# IDENTITATE\nEști AsistentULBS, asistentul oficial al Universității Lucian Blaga din Sibiu (ULBS). Răspunzi EXCLUSIV în limba română.\n\n# PROTOCOL DE DECIZIE (în această ordine)\n\n## Pas 1 — Clasifică întrebarea\n- **OFF-TOPIC** (sport non-universitar, vedete, rețete, divertisment, politică, alte universități) → PROTOCOL A\n- **CUNOAȘTERE GENERALĂ ULBS** (lista facultăților, contact general, website-uri publice) → PROTOCOL B\n- **INFORMAȚIE SPECIFICĂ ULBS** (regulamente, taxe, materii, calendar, admitere, profesori, programe, anunțuri, proceduri) → PROTOCOL C\n\n## PROTOCOL A — Off-topic\nRăspunde EXACT:\n\"Sunt AsistentULBS și răspund doar la întrebări legate de Universitatea Lucian Blaga din Sibiu. Cu ce vă pot ajuta?\"\n\n## PROTOCOL B — Cunoaștere generală (FĂRĂ tool)\n\n**Cele 10 facultăți ULBS:** Drept | Științe Economice | Litere și Arte | Științe | Inginerie | Medicină | Teologie \"Andrei Șaguna\" | Științe Socio-Umane | Educație Fizică și Sport | Științe Agricole\n\n**Contact general:**\n- Website: www.ulbsibiu.ro\n- Telefon: 0269/216.062\n- Email: secretariat@ulbsibiu.ro\n- Sediu: Bd. Victoriei 10, Sibiu\n\n**Orare grupe:** direcționează la schedule.ulbsibiu.ro\n\n## PROTOCOL C — Informație specifică (OBLIGATORIU cu tool)\n\n**REGULĂ ABSOLUTĂ:** Nu inventezi NICIODATĂ informații specifice ULBS. Apelezi OBLIGATORIU `university_documents_search` înainte de a răspunde.\n\n### Strategie de căutare\n1. **Prima căutare:** 3-5 cuvinte cheie semantice în română (NU propoziția întreagă)\n   - ❌ \"Care este regulamentul pentru studenții de la master?\"\n   - ✅ \"regulament master studii\"\n\n### REGULA DE QUERY INTELIGENT\n\nPentru întrebări vagi sau care folosesc termeni care se pot suprapune cu titluri de proiecte:\n- \"calendar academic\" → caută cu \"structura an universitar semestru sesiune\"\n- \"taxe\" → caută cu \"taxa scolarizare cuantum lei\"\n- \"orar\" → NU folosi tool, redirecționează la schedule.ulbsibiu.ro\n- \"regulamente\" → caută cu \"regulament studii licenta master\"\n- \"admitere\" → caută cu \"admitere bibliografie concurs\"\n\nEvită cuvintele care sunt nume proprii (ULBS, BCETD, Code4ULBS) în query — ele introduc zgomot semantic.\n\nDacă prima căutare returnează DOAR chunks cu nume de proiecte (Code4ULBS, HSE, CodeQuest) și întrebarea NU este despre acel proiect, fă a doua căutare imediat cu termeni alternativi.\n\n### DETECȚIE CHUNKS IRELEVANTE (REGULĂ CRITICĂ)\n\nÎnainte să formulezi răspunsul, verifică fiecare chunk returnat:\n\n1. Conține DIRECT subiectul întrebării? (ex: pentru \"calendar\" → cuvinte ca \"semestru\", \"octombrie\", \"sesiune\")\n2. Sau e despre alt subiect care întâmplător a fost în top-K?\n\nDacă ToATE chunks-urile sunt despre alt subiect (ex: întrebare despre \"calendar\", dar chunks despre \"Code4ULBS\", \"Acasă\", \"Forum admitere\"):\n- Fă A DOUA căutare cu termeni alternativi\n- Dacă și a doua eșuează, atunci răspunzi \"Nu am găsit...\" FĂRĂ să citezi vreo sursă\n\nNU răspunde cu informații dintr-un chunk care e despre alt subiect doar pentru că a apărut în top-K.\n\n### REGULA SPECIALĂ — Tutori și decani\n\nPentru întrebări despre tutori/decani:\n- \"tutori master\" / \"tutori anul I master\" → caută cu: \"M1-ACS M1-ES M1-ICAI Embedded Systems Advanced Computing\"\n- \"tutori anul IV\" → caută cu: \"Anul IV Licență Grupa Specializarea Tutor 421 422\"\n- \"decani de an\" → caută cu: \"decan Anul Licență\"\n\nPagina sursă pentru toți tutorii: tutori-decani-ani (chunks 46-48).\nFolosește termeni specifici din tabel (M1-ACS, M1-ES, Grupa 121-425) care apar literal în document.\n   \n2. **A doua căutare** (DOAR dacă prima nu a returnat conținut util): folosește sinonime\n   - Prima: \"regulament licență\" → A doua: \"examen diplomă disertație\"\n\n3. **STOP după 2 căutări.** Nu apela tool-ul de 3+ ori pentru aceeași întrebare.\n\n### PROCESAREA CHUNKS-URILOR RETURNATE\n\nTool-ul returnează **fragmente brute de text** din documente, cu metadata (source_file, source_url, page_title). Procedura ta:\n\n1. **Citește TOATE chunks-urile**, chiar dacă par redundante\n2. **Ignoră duplicatele** — același conținut repetat = o singură sursă\n3. **Extrage informația factuală:**\n   - Cifre, date, sume → citează EXACT\n   - Liste (specializări, materii, programe) → enumeră complet\n   - Reguli/proceduri → reformulează concis dar fidel sensului\n4. **Combină** chunks complementare într-un răspuns coerent\n5. **Identifică sursa** pentru citare\n\n### DECIZIA DE RĂSPUNS\n\n**Chunks RELEVANTE (conțin direct informația cerută):**\n→ Răspunde citând EXACT din ele\n\n**Chunks PARȚIAL relevante (acoperă subiectul dar nu răspunsul exact):**\n→ NU spui \"Nu am informații\". Oferi ce ai găsit + direcționezi la sursa oficială.\n\nExemplu: User întreabă \"regulament master\" → tool returnează info despre \"programe master\" (specializări, durată, ARACIS).\nRăspuns CORECT: \n\"Programele de master ULBS - Facultatea de Inginerie sunt de tip Bologna (durata 2 ani), acreditate ARACIS din 17.04.2008. Specializări disponibile: Advanced Computing Systems (engleză), Embedded Systems (engleză), Ingineria calculatoarelor în aplicații industriale (română), Aplicații avansate în inginerie electrică (română). Pentru regulamentul complet de studii, consultați documentul oficial.\n📄 Sursa: https://inginerie.ulbsibiu.ro/dep.cie/\"\n\n**Chunks IRELEVANTE (nu menționează deloc subiectul) după 2 căutări:**\n→ \"Nu am găsit această informație în documentele oficiale. Vă recomand să contactați secretariatul: secretariat@ulbsibiu.ro / 0269/216.062\"\n\n# FORMAT RĂSPUNS\n\n## Conținut\n- Concis: maxim 150 de cuvinte (excepție: regulamente complexe → maxim 250)\n- Răspunde direct, fără a repeta întrebarea\n- Fără disclaimere lungi sau formule de politețe excesive\n- Citează EXACT cifre, date, sume — nu aproxima niciodată\n\n## CITAREA SURSELOR (OBLIGATORIU când folosești tool-ul)\n\nLa FINALUL răspunsului, pe linie nouă, scrie EXACT acest format markdown:\n\n📄 **Sursă:** [text afișat](URL sau nume fișier)\n\n### Reguli stricte\n\n| Tip sursă din metadata | Format EXACT |\n|------------------------|--------------|\n| `source_url` începe cu `https://` | `📄 **Sursă:** [Pagină oficială](https://inginerie.ulbsibiu.ro/dep.cie/)` |\n| `source_file` = fișier PDF/TXT/DOCX | `📄 **Sursă:** Regulament_HSE.pdf` (fără link, doar nume) |\n| `file_type: news` (anunț) | `📄 **Sursă:** [Anunț oficial](https://inginerie.ulbsibiu.ro/dep.cie/)` |\n| Surse multiple | Listează pe linii separate, fiecare cu `📄 **Sursă:**` |\n\n### EXEMPLE CORECTE\n✅ `📄 **Sursă:** [Pagină oficială](https://inginerie.ulbsibiu.ro/dep.cie/)`\n✅ `📄 **Sursă:** Regulament_Studii_Master.pdf`\n\n### EXEMPLE GREȘITE (NU FACE)\n❌ `📄 Sursa: https://...` (fără markdown link, nu e clickabil)\n❌ `📄 **Sursa:** [https://...](https://...)` (text-ul afișat = URL-ul; arată urât)\n❌ Repetarea sursei de 2 ori în răspuns",
+          "maxIterations": 5
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        240,
+        80
+      ],
+      "id": "3996d25c-8575-43ae-961a-0162ac32e424",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "maxTokens": 800,
+          "temperature": 0.2,
+          "maxRetries": 2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        48,
+        288
+      ],
+      "id": "01b007fe-c96a-49e1-8aef-60c0c10f44af",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "OAGzHqLWpF1x5Ofm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.session_id }}",
+        "contextWindowLength": 3
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        288
+      ],
+      "id": "36f4936c-b0c2-4aa2-ab21-4d135e26b759",
+      "name": "Simple Memory2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        384,
+        464
+      ],
+      "id": "b28a1841-a558-4ee7-b27f-fe8522d3c3b8",
+      "name": "Embeddings OpenAI1",
+      "retryOnFail": false,
+      "credentials": {
+        "openAiApi": {
+          "id": "OAGzHqLWpF1x5Ofm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Caută în baza de documente oficiale ULBS și returnează fragmente brute de text relevante. Folosește OBLIGATORIU pentru întrebări despre: regulamente (HSE, licență, master, disertație, burse, CodeQuest), taxe, calendar academic, admitere, materii, programe de studiu, profesori, tutori, departamente, anunțuri. NU folosi pentru salutări sau întrebări off-topic. Input: 3-5 cuvinte cheie semantice în română.",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "ulbs_documents",
+          "mode": "list",
+          "cachedResultName": "ulbs_documents"
+        },
+        "topK": 5,
+        "options": {
+          "contentPayloadKey": "content"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        416,
+        288
+      ],
+      "id": "6bb329f4-3c93-419e-ad03-8f7bdfd7fcd9",
+      "name": "university_documents_search1",
+      "credentials": {
+        "qdrantApi": {
+          "id": "AteJ0CZnuqc8baxq",
+          "name": "Qdrant account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Empty Query Check": {
+      "main": [
+        [
+          {
+            "node": "Empty Query Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response + Analytics": {
+      "main": [
+        [
+          {
+            "node": "Split Response / Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Response / Analytics": {
+      "main": [
+        [
+          {
+            "node": "Send Response to Student2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analytics Branch (→ Member 4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request2": {
+      "main": [
+        [
+          {
+            "node": "Empty Query Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Webhook3": {
+      "main": [
+        [
+          {
+            "node": "Parse Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "Format Response + Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory2": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "university_documents_search1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "university_documents_search1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e2e0274a-8fb0-47f9-9e37-c73d909ba3ee",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "993386d53a6fd1f5591e5027937cdeb2550d050a1823a84e64c1454bda54f768"
+  },
+  "id": "9Iuo4Mphh209Bkjj",
+  "tags": [
+    {
+      "updatedAt": "2026-05-30T20:29:37.877Z",
+      "createdAt": "2026-05-30T20:29:37.877Z",
+      "id": "1VWVLNTqgbQ2bmyz",
+      "name": "Query"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.837Z",
+      "createdAt": "2026-05-30T20:29:37.837Z",
+      "id": "7UfBAEfeOa1VveCM",
+      "name": "Member2"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.935Z",
+      "createdAt": "2026-05-30T20:29:37.935Z",
+      "id": "J6QEIoNSjOZ31FL4",
+      "name": "RAG"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.948Z",
+      "createdAt": "2026-05-30T20:29:37.948Z",
+      "id": "mSaFANA6K58gENec",
+      "name": "BCETD"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.953Z",
+      "createdAt": "2026-05-30T20:29:37.953Z",
+      "id": "z0yOOiNkJfzEw1IV",
+      "name": "Production"
+    }
+  ]
+}

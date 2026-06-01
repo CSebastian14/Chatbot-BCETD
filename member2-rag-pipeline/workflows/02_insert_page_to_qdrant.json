@@ -1,0 +1,372 @@
+{
+  "name": "Insert Page to Qdrant",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1152,
+        416
+      ],
+      "id": "0644f042-d9e0-48e9-b9ac-bd7b515b69f4",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "https://inginerie.ulbsibiu.ro/dep.cie/",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -928,
+        416
+      ],
+      "id": "67336e16-af32-4b8d-94e6-dd6b7f519df0",
+      "name": "Fetch DEP CIE Page"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract clean text and PDF links from HTML\nconst html = $input.first().json.data || $input.first().json.body || $input.first().json;\nconst htmlString = typeof html === \"string\" ? html : JSON.stringify(html);\n\nconst baseUrl = \"https://inginerie.ulbsibiu.ro/dep.cie/\";\n\nlet cleanText = htmlString;\n\n// FOLOSIM CODURI HEXADECIMALE pentru a evita eroarea \"missing )\"\n// \\x3C înseamnă <\n// \\x3E înseamnă >\n// Astfel, parser-ul n8n nu mai confundă codul cu tag-uri HTML reale.\ncleanText = cleanText.replace(/\\x3Cscript[\\s\\S]*?\\x3C\\/script\\x3E/gi, \"\");\ncleanText = cleanText.replace(/\\x3Cstyle[\\s\\S]*?\\x3C\\/style\\x3E/gi, \"\");\ncleanText = cleanText.replace(/\\x3Cnav[\\s\\S]*?\\x3C\\/nav\\x3E/gi, \"\");\ncleanText = cleanText.replace(/\\x3Cfooter[\\s\\S]*?\\x3C\\/footer\\x3E/gi, \"\");\ncleanText = cleanText.replace(/\\x3Cheader[\\s\\S]*?\\x3C\\/header\\x3E/gi, \"\");\ncleanText = cleanText.replace(/\\x3C!--[\\s\\S]*?--\\x3E/g, \"\");\n\n// ACEASTA ESTE LINIA CARE DĂDEA CRASH, acum rescrisă în format sigur:\ncleanText = cleanText.replace(/\\x3C[^\\x3E]+\\x3E/g, \" \");\n\n// Curățăm entitățile HTML\ncleanText = cleanText.replace(/&nbsp;/g, \" \");\ncleanText = cleanText.replace(/&amp;/g, \"&\");\ncleanText = cleanText.replace(/&lt;/g, \"<\");\ncleanText = cleanText.replace(/&gt;/g, \">\");\ncleanText = cleanText.replace(/&quot;/g, '\"');\ncleanText = cleanText.replace(/&#39;/g, \"'\");\n\n// Eliminăm spațiile suplimentare\ncleanText = cleanText.replace(/\\s+/g, \" \");\ncleanText = cleanText.trim();\n\n// Limităm cantitatea de text\nif (cleanText.length > 50000) {\n  cleanText = cleanText.substring(0, 50000);\n}\n\n// Extragem linkurile PDF (aici nu foloseam < > deci e în siguranță)\nconst pdfLinks = [];\nconst linkRegex = /href=[\"']([^\"']+\\.pdf[^\"']*)[\"']/gi;\nlet match;\n\nwhile ((match = linkRegex.exec(htmlString)) !== null) {\n  let pdfUrl = match[1];\n  \n  if (pdfUrl.startsWith(\"//\")) {\n    pdfUrl = \"https:\" + pdfUrl;\n  } else if (pdfUrl.startsWith(\"/\")) {\n    pdfUrl = \"https://inginerie.ulbsibiu.ro\" + pdfUrl;\n  } else if (!pdfUrl.startsWith(\"http\")) {\n    pdfUrl = baseUrl + pdfUrl;\n  }\n  \n  let parts = pdfUrl.split(\"/\");\n  let lastPart = parts[parts.length - 1];\n  let fileName = lastPart.split(\"?\")[0];\n  \n  if (!fileName) {\n    fileName = \"document_\" + (pdfLinks.length + 1) + \".pdf\";\n  }\n  \n  pdfLinks.push({\n    url: pdfUrl,\n    fileName: fileName\n  });\n}\n\n// Filtrăm PDF-urile duplicate folosind un dicționar standard\nconst uniquePdfsObj = {};\nfor (let i = 0; i < pdfLinks.length; i++) {\n  uniquePdfsObj[pdfLinks[i].url] = pdfLinks[i];\n}\nconst uniquePdfs = Object.values(uniquePdfsObj);\n\n// Construim datele pentru următorul nod\nconst results = [];\n\n// Adăugăm pagina web dacă are suficient text\nif (cleanText.length > 100) {\n  results.push({\n    json: {\n      type: \"web_page\",\n      text: cleanText,\n      source_url: baseUrl,\n      fileName: \"inginerie_dep_cie_page.txt\",\n      char_count: cleanText.length\n    }\n  });\n}\n\n// Adăugăm fișierele PDF\nfor (let j = 0; j < uniquePdfs.length; j++) {\n  results.push({\n    json: {\n      type: \"pdf_link\",\n      url: uniquePdfs[j].url,\n      fileName: uniquePdfs[j].fileName,\n      source_page: baseUrl\n    }\n  });\n}\n\n// MĂSURĂ DE SIGURANȚĂ: Dacă nu s-a găsit nimic, forțăm trimiterea pe ramură\n// astfel încât nodul decizional (\"E text?\") să preia comanda.\nif (results.length === 0) {\n  results.push({\n    json: {\n      type: \"web_page_short\",\n      text: cleanText,\n      source_url: baseUrl,\n      fileName: \"inginerie_dep_cie_page.txt\",\n      char_count: cleanText.length\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        416
+      ],
+      "id": "dc2a5c32-ad66-41e7-ae6b-f4db4303dd5d",
+      "name": "Parse HTML & Extract Links"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5ea64c2d-27eb-4544-8d51-4c108bc2de29",
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "pdf_link",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -480,
+        416
+      ],
+      "id": "0ac41fca-989f-4f73-b987-3eb3e85c1fbc",
+      "name": "E text?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nreturn [{\n  json: {\n    text: item.text,\n    metadata: {\n      source_file: item.fileName,\n      source_url: item.source_url,\n      file_type: 'web',\n      ingested_at: new Date().toISOString(),\n      char_count: item.char_count\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        208
+      ],
+      "id": "2477f22e-d608-416b-9cc1-60ea45542570",
+      "name": "Add Page Metadata"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "ulbs_documents",
+          "mode": "list",
+          "cachedResultName": "ulbs_documents"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1aa9344f-82a2-438b-b7a7-568aea82f9bc",
+      "name": "Qdrant Vector Store",
+      "credentials": {
+        "qdrantApi": {
+          "id": "AteJ0CZnuqc8baxq",
+          "name": "Qdrant account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -32,
+        224
+      ],
+      "id": "6c6c5852-d5f7-439c-bbac-396558d8611d",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "OAGzHqLWpF1x5Ofm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "=source",
+                "value": "=={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "=source_file",
+                "value": "=={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "=source_url",
+                "value": "=={{ $json.metadata.source_url }}"
+              },
+              {
+                "name": "=chunk_index",
+                "value": "=={{ $itemIndex }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        96,
+        224
+      ],
+      "id": "a56eb914-be4a-4eab-aa5c-f71b67d559e7",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "chunkSize": 500,
+        "chunkOverlap": 50,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        176,
+        432
+      ],
+      "id": "de6eec43-a595-41e9-952f-f2be66fc1a26",
+      "name": "Recursive Character Text Splitter"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -256,
+        608
+      ],
+      "id": "a3df2079-d107-48de-9804-ffaf56867e19",
+      "name": "Download PDF"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        608
+      ],
+      "id": "34114169-64dc-492c-b464-9c8171e2f786",
+      "name": "Extract PDF Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst previousItem = $('Download PDF').first().json;\n\nreturn [{\n  json: {\n    text: item.text || item.data || '',\n    metadata: {\n      source_file: previousItem.fileName || 'document.pdf',\n      source_url: previousItem.url || '',\n      file_type: 'pdf',\n      ingested_at: new Date().toISOString(),\n      char_count: (item.text || '').length\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        608
+      ],
+      "id": "41f13cf6-f207-4b2c-ba4b-e855bf930173",
+      "name": "Add PDF Metadata"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Fetch DEP CIE Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch DEP CIE Page": {
+      "main": [
+        [
+          {
+            "node": "Parse HTML & Extract Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E text?": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Page Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Page Metadata": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Add PDF Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse HTML & Extract Links": {
+      "main": [
+        [
+          {
+            "node": "E text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "924ebd97-56c4-474d-9baf-37efac60623f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "993386d53a6fd1f5591e5027937cdeb2550d050a1823a84e64c1454bda54f768"
+  },
+  "id": "ANy7enBLOftGK2HX",
+  "tags": []
+}
