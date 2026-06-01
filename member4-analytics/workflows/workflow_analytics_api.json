@@ -1,0 +1,475 @@
+{
+  "name": "BCETD - Analytics API (Admin Dashboard)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "analytics/summary",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "97358037-f422-466e-b57f-9fdc258b4f13",
+      "name": "GET /analytics/summary",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "bcetd-analytics-summary"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT COUNT(*) FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days') AS queries_7d, (SELECT COUNT(*) FROM query_logs WHERE created_at >= NOW() - INTERVAL '1 day') AS queries_24h, (SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE was_answered) / NULLIF(COUNT(*), 0), 1) FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days') AS success_rate_7d, (SELECT ROUND(AVG(response_ms)) FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days' AND was_answered = TRUE) AS avg_response_ms, (SELECT COUNT(DISTINCT session_id) FROM query_logs WHERE created_at >= NOW() - INTERVAL '7 days') AS unique_sessions_7d;",
+        "options": {}
+      },
+      "id": "ef43f777-d52d-4a9a-a9b1-bba083b6f324",
+      "name": "Fetch Summary Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cf76dbbb-6fe7-421b-949b-56873a712a7d",
+      "name": "Respond Summary",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "path": "analytics/daily",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "068ee264-45c0-480b-ad2c-be617d5d1d78",
+      "name": "GET /analytics/daily",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        208
+      ],
+      "webhookId": "bcetd-analytics-daily"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM v_daily_volume;",
+        "options": {}
+      },
+      "id": "bb901f9e-7e7c-44f3-88d1-e30628ef7246",
+      "name": "Fetch Daily Volume",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.all().map(i => i.json)) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "18b91dcb-3079-418f-83f9-4df984b3c93d",
+      "name": "Respond Daily",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "path": "analytics/categories",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "c38c3026-bcac-4ee2-8b63-34e5b986b510",
+      "name": "GET /analytics/categories",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "bcetd-analytics-categories"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM v_category_breakdown;",
+        "options": {}
+      },
+      "id": "0284ea7b-2a3d-40c9-987f-eb129247843d",
+      "name": "Fetch Categories",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.all().map(i => i.json)) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "411bc8d7-a10c-44d6-9619-8bc4836aa4ee",
+      "name": "Respond Categories",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "path": "analytics/documents",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "3f540e1b-015d-4238-a69f-8da96a635fbe",
+      "name": "GET /analytics/documents",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        608
+      ],
+      "webhookId": "bcetd-analytics-documents"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM v_top_documents;",
+        "options": {}
+      },
+      "id": "338229cb-f7c2-40e7-a532-ab1930437937",
+      "name": "Fetch Top Documents",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.all().map(i => i.json)) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fd77a345-76f3-4d5f-b95d-1c041f13f4f8",
+      "name": "Respond Documents",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "path": "analytics/hourly",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "51e9f879-52df-475b-a676-2abdbe5bea19",
+      "name": "GET /analytics/hourly",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        800
+      ],
+      "webhookId": "bcetd-analytics-hourly"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM v_hourly_pattern;",
+        "options": {}
+      },
+      "id": "517c0268-d1f5-474b-8241-b972c5f6c917",
+      "name": "Fetch Hourly Pattern",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        800
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lVjF8iukDga3DXN9",
+          "name": "Postgres BCETD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.all().map(i => i.json)) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b7436df3-c506-4a7d-9e00-d06c6a0dc63e",
+      "name": "Respond Hourly",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        800
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "GET /analytics/summary": {
+      "main": [
+        [
+          {
+            "node": "Fetch Summary Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Summary Stats": {
+      "main": [
+        [
+          {
+            "node": "Respond Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /analytics/daily": {
+      "main": [
+        [
+          {
+            "node": "Fetch Daily Volume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Daily Volume": {
+      "main": [
+        [
+          {
+            "node": "Respond Daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /analytics/categories": {
+      "main": [
+        [
+          {
+            "node": "Fetch Categories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Categories": {
+      "main": [
+        [
+          {
+            "node": "Respond Categories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /analytics/documents": {
+      "main": [
+        [
+          {
+            "node": "Fetch Top Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Top Documents": {
+      "main": [
+        [
+          {
+            "node": "Respond Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /analytics/hourly": {
+      "main": [
+        [
+          {
+            "node": "Fetch Hourly Pattern",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Hourly Pattern": {
+      "main": [
+        [
+          {
+            "node": "Respond Hourly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "69a12576-1284-4db9-8139-b9718014547e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "60f0e9895ac00a3358b9443ed8c374cee94610b5021ba8b8b2cad8a2c24f2fc4"
+  },
+  "id": "YPRRUXWGH1u2Nb5M",
+  "tags": [
+    {
+      "updatedAt": "2026-05-09T19:23:29.425Z",
+      "createdAt": "2026-05-09T19:23:29.425Z",
+      "id": "F0c2hs47VjBfKTV4",
+      "name": "Analytics"
+    },
+    {
+      "updatedAt": "2026-05-09T19:23:29.380Z",
+      "createdAt": "2026-05-09T19:23:29.380Z",
+      "id": "NLELoZzhCG4UUh8k",
+      "name": "Member4"
+    },
+    {
+      "updatedAt": "2026-05-09T19:12:45.112Z",
+      "createdAt": "2026-05-09T19:12:45.112Z",
+      "id": "Y96UPPQ6fwSD5LwH",
+      "name": "BCETD"
+    },
+    {
+      "updatedAt": "2026-05-09T19:26:53.589Z",
+      "createdAt": "2026-05-09T19:26:53.589Z",
+      "id": "lFY5AZ9umy8w2dJe",
+      "name": "API"
+    }
+  ]
+}
