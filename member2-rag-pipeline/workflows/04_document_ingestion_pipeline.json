@@ -1,0 +1,532 @@
+{
+  "name": "Document Ingestion Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "6b7138ef-d2e2-4275-8de5-06fd434dee2c",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -832,
+        176
+      ],
+      "notes": "Run manually when new documents are added to /data/documents/"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/documents/*"
+      },
+      "id": "9698d4eb-a14a-43a1-8a84-f96554dc56cc",
+      "name": "Read Document Files",
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        176
+      ],
+      "notes": "Reads all PDF, DOCX, TXT, HTML files from the mounted Docker volume"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add metadata - works correctly with Switch+Merge for multiple file types\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  // Extrage numele salvat de nodul Edit Fields (Set) anterior, sau folosește 'unknown'\n  const fileName = item.json?.fileName || 'unknown';\n  const fileExtension = fileName !== 'unknown' ? fileName.split('.').pop().toLowerCase() : 'unknown';\n  \n  // Get the extracted text content\n  const text = item.json?.text \n            || item.json?.data \n            || item.json?.content \n            || item.json?.pageContent\n            || '';\n  \n  console.log(`Processing: ${fileName} (${fileExtension}) - ${text.length} chars`);\n  \n  if (!text || text.trim().length < 50) {\n    console.log(`Skipping ${fileName}: insufficient text`);\n    continue;\n  }\n  \n  results.push({\n    json: {\n      fileName: fileName,\n      text: `Source File: ${fileName}\\n\\n${text.trim()}`,\n      metadata: {\n        source_file: fileName,\n        file_type: fileExtension,\n        ingested_at: new Date().toISOString(),\n        char_count: text.trim().length,\n        estimated_tokens: Math.ceil(text.trim().length / 4)\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "2eae47f3-b466-46fd-926d-b9b5699e45c3",
+      "name": "Add Document Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        176
+      ],
+      "notes": "Attaches source filename, timestamp, char count to each document"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "ulbs_documents",
+          "mode": "list",
+          "cachedResultName": "ulbs_documents"
+        },
+        "options": {}
+      },
+      "id": "2fc2ec41-385a-4d47-87c8-a65abde18b6b",
+      "name": "Qdrant Vector Store - Insert",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [
+        416,
+        176
+      ],
+      "credentials": {
+        "qdrantApi": {
+          "id": "AteJ0CZnuqc8baxq",
+          "name": "Qdrant account"
+        }
+      },
+      "notes": "Stores embeddings + text + metadata in the 'ulbs_documents' collection. Distance metric: Cosine similarity. Vector size matches embedding model (1536 for OpenAI, 384 for nomic)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final summary of ingestion results\nconst items = $input.all();\nconst summary = {\n  status: 'INGESTION_COMPLETE',\n  total_chunks_stored: items.length,\n  timestamp: new Date().toISOString(),\n  collection: 'ulbs_documents',\n  message: `Successfully ingested ${items.length} document chunks into Qdrant.`\n};\n\nconsole.log(JSON.stringify(summary, null, 2));\nreturn [{ json: summary }];"
+      },
+      "id": "276dad06-928e-49ed-925e-7aabe2bb9ffe",
+      "name": "Ingestion Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        176
+      ],
+      "notes": "Logs a summary of the ingestion run"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        352,
+        352
+      ],
+      "id": "a3aa5bd7-32bf-4abb-bb33-a38dc0981574",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "OAGzHqLWpF1x5Ofm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "source",
+                "value": "={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "chunk_index",
+                "value": "={{ $itemIndex }}"
+              },
+              {
+                "name": "source_file",
+                "value": "={{ $json.metadata.source_file }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        544,
+        352
+      ],
+      "id": "de7cb1fd-edfc-4f0f-b689-c1fb58ec5e95",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fileName }}",
+                    "rightValue": ".txt",
+                    "operator": {
+                      "type": "string",
+                      "operation": "endsWith"
+                    },
+                    "id": "5e6297e5-5b00-4b20-9d78-6f0b4e0f38b1"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "bd9bd5a4-3608-4c57-a6cd-66982ec2cab2",
+                    "leftValue": "={{ $json.fileName }}",
+                    "rightValue": "=.pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "endsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -304,
+        208
+      ],
+      "id": "d54c1b29-4dea-4ab7-930a-3da25660b77f",
+      "name": "Switch"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        96,
+        192
+      ],
+      "id": "3ccd11ca-5e1a-411d-8fcd-9c9c1a8ff258",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "ff72b371-f6a7-4b6a-862c-e1eb49739f16",
+      "name": "Extract Pdf",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        384
+      ],
+      "notes": "Extracts raw text from binary file formats (PDF parser, DOCX reader, etc.)"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {
+          "encoding": "utf-8"
+        }
+      },
+      "id": "f20723c0-e299-4bcc-8e8f-1e253d2bb4e2",
+      "name": "Extract Txt",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        64
+      ],
+      "notes": "Extracts raw text from binary file formats (PDF parser, DOCX reader, etc.)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "349d8ee2-ca85-453d-b440-ae8d0dee2594",
+              "name": "fileName",
+              "value": "={{ $binary.data.fileName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -480,
+        336
+      ],
+      "id": "4a001bf4-0813-437e-a7fa-e159d8ab7db1",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "349d8ee2-ca85-453d-b440-ae8d0dee2594",
+              "name": "fileName",
+              "value": "={{ $('Read Document Files').item.binary.data.fileName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "313fa169-6b22-46c1-8a11-5cdb26e79c41",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "349d8ee2-ca85-453d-b440-ae8d0dee2594",
+              "name": "fileName",
+              "value": "={{ $('Read Document Files').item.binary.data.fileName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -48,
+        384
+      ],
+      "id": "2fd383d1-9956-4d5f-971a-6e22187ef4a4",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "chunkSize": 800,
+        "chunkOverlap": 100,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        528,
+        512
+      ],
+      "id": "734f1833-da3d-43f4-874b-592474dc7106",
+      "name": "Recursive Character Text Splitter"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Document Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Document Files": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store - Insert",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Qdrant Vector Store - Insert",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Document Metadata": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Vector Store - Insert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store - Insert": {
+      "main": [
+        [
+          {
+            "node": "Ingestion Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Extract Txt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Pdf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Add Document Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Pdf": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Txt": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "bc7e8ce8-ca10-4253-8c39-e972f5b2e6ae",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "993386d53a6fd1f5591e5027937cdeb2550d050a1823a84e64c1454bda54f768"
+  },
+  "id": "uKmv1hz65Xkg7mr9",
+  "tags": [
+    {
+      "name": "Ingestion",
+      "id": "XbILdlCAC6UoP2AL",
+      "updatedAt": "2026-05-30T23:58:38.140Z",
+      "createdAt": "2026-05-30T23:58:38.140Z"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.948Z",
+      "createdAt": "2026-05-30T20:29:37.948Z",
+      "id": "mSaFANA6K58gENec",
+      "name": "BCETD"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.935Z",
+      "createdAt": "2026-05-30T20:29:37.935Z",
+      "id": "J6QEIoNSjOZ31FL4",
+      "name": "RAG"
+    },
+    {
+      "updatedAt": "2026-05-30T20:29:37.837Z",
+      "createdAt": "2026-05-30T20:29:37.837Z",
+      "id": "7UfBAEfeOa1VveCM",
+      "name": "Member2"
+    }
+  ]
+}
