@@ -1,0 +1,117 @@
+# BCETD Guardrails — Blocklist Configuration
+# Member 3 Deliverable
+# Last Updated: 2026-03-27
+#
+# FORMAT: One term per line. Lines starting with # are comments.
+# Terms are matched as word boundaries (\b) to reduce false positives.
+# Supports both Romanian and English terms.
+#
+# CATEGORIES:
+#   [EXPLICIT]       — Sexually explicit content
+#   [VIOLENCE]       — Violent or threatening content
+#   [SUBSTANCES]     — Drug/substance related
+#   [HATE]           — Hate speech and discrimination
+#   [CYBER]          — Hacking/cybercrime related
+#   [SELF-HARM]      — Self-harm related
+#   [EXTREMISM]      — Extremist/terrorist content
+
+# ══════════════════════════════════════════
+# [EXPLICIT] — Sexually Explicit Content
+# ══════════════════════════════════════════
+porn
+pornografie
+xxx
+nude
+naked
+sex chat
+sexting
+onlyfans
+escort
+
+# ══════════════════════════════════════════
+# [VIOLENCE] — Violent / Threatening Content
+# ══════════════════════════════════════════
+kill
+murder
+assassinate
+bomb
+weapon
+arma
+impusca
+ameninta
+threat
+stab
+shoot
+explode
+
+# ══════════════════════════════════════════
+# [SUBSTANCES] — Drug/Substance References
+# ══════════════════════════════════════════
+drug dealer
+drog
+marijuana
+cocaina
+heroin
+methamphetamine
+fentanyl
+drug recipe
+cum sa faci droguri
+
+# ══════════════════════════════════════════
+# [HATE] — Hate Speech / Discrimination
+# ══════════════════════════════════════════
+# Note: This section intentionally keeps patterns generic
+# to avoid reproducing slurs. In production, use a
+# moderation API (OpenAI Moderation, Perspective API)
+# for nuanced hate speech detection.
+
+# ══════════════════════════════════════════
+# [CYBER] — Hacking / Cybercrime
+# ══════════════════════════════════════════
+hack into
+exploit vulnerability
+malware
+ransomware
+ddos
+phishing
+keylogger
+sql injection
+brute force password
+steal data
+sparge parola
+
+# ══════════════════════════════════════════
+# [SELF-HARM] — Self-Harm Related
+# ══════════════════════════════════════════
+# Note: These are handled with care. If detected,
+# the system returns a supportive message with
+# crisis helpline information, not just a rejection.
+suicide method
+self-harm method
+how to hurt myself
+cum sa ma sinucid
+
+# ══════════════════════════════════════════
+# [EXTREMISM] — Extremist Content
+# ══════════════════════════════════════════
+terrorist
+terrorism
+extremism
+radicalize
+jihad
+white supremacy
+neo-nazi
+
+# ══════════════════════════════════════════
+# MAINTENANCE NOTES
+# ══════════════════════════════════════════
+# 1. Review this list monthly for false positives
+# 2. Add new terms as adversarial testing reveals gaps
+# 3. Never include terms that could block legitimate
+#    academic queries (e.g., "chemical" could block
+#    chemistry questions)
+# 4. Test each new term against 10+ legitimate queries
+#    before adding to production
+# 5. For self-harm queries, always redirect to:
+#    - Telefonul Sufletului: 0800 801 200 (Romania)
+#    - Crisis Text Line: Text HOME to 741741 (English)
