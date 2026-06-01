@@ -1,0 +1,477 @@
+{
+  "name": "Web API Ingestion-M2",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        352
+      ],
+      "id": "f460f69d-b784-4dee-9936-f7d840776347",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "https://inginerie.ulbsibiu.ro/dep.cie/api/public/pages?locale=ro",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "lowercaseHeaders": true,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -368,
+        48
+      ],
+      "id": "954a1a4c-1762-43ee-bd6d-28fd982941e5",
+      "name": "Fetch Pages API"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse pages API response - block-based content (EditorJS format)\nconst firstItem = $input.first().json;\n\n// Detect if response is wrapped in body\nlet response;\nif (firstItem.body) {\n  response = firstItem.body;\n} else {\n  response = firstItem;\n}\n\nlet pages = [];\nif (response.data && Array.isArray(response.data)) {\n  pages = response.data;\n} else if (Array.isArray(response)) {\n  pages = response;\n}\n\nconsole.log(`Found ${pages.length} pages`);\n\n// Helper: extract text from a block\nfunction blockToText(block) {\n  if (!block || !block.data) return '';\n  \n  const type = block.type;\n  const data = block.data;\n  \n  // Heading\n  if (type === 'heading') {\n    const level = data.level || 2;\n    const prefix = '#'.repeat(level);\n    return `\\n${prefix} ${data.text || ''}\\n`;\n  }\n  \n  // Paragraph\n  if (type === 'paragraph') {\n    const text = data.text || data.html || '';\n    return cleanHtml(text) + '\\n';\n  }\n  \n  // HTML block\n  if (type === 'html') {\n    return cleanHtml(data.html || data.text || '') + '\\n';\n  }\n  \n  // List (ordered or unordered)\n  if (type === 'list') {\n    const items = data.items || [];\n    if (!Array.isArray(items)) return '';\n    return items.map(item => `- ${cleanHtml(String(item))}`).join('\\n') + '\\n';\n  }\n  \n  // Table\n  if (type === 'table') {\n    const headers = data.headers || [];\n    const rows = data.rows || [];\n    let result = '';\n    if (headers.length > 0) {\n      result += headers.join(' | ') + '\\n';\n      result += headers.map(() => '---').join(' | ') + '\\n';\n    }\n    rows.forEach(row => {\n      if (Array.isArray(row)) {\n        result += row.map(c => cleanHtml(String(c))).join(' | ') + '\\n';\n      }\n    });\n    return result;\n  }\n  \n  // Image - just include alt and caption\n  if (type === 'image') {\n    return `[Imagine: ${data.alt || data.caption || 'image'}]\\n`;\n  }\n  \n  // Divider\n  if (type === 'divider') {\n    return '\\n---\\n';\n  }\n  \n  // Fallback: try to get any text\n  if (data.text) return cleanHtml(data.text) + '\\n';\n  if (data.html) return cleanHtml(data.html) + '\\n';\n  \n  return '';\n}\n\n// Helper: clean HTML to plain text\nfunction cleanHtml(html) {\n  if (!html) return '';\n  return String(html)\n    .replace(/<script\\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, '')\n    .replace(/<style\\b[^<]*(?:(?!<\\/style>)<[^<]*)*<\\/style>/gi, '')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/p>/gi, '\\n')\n    .replace(/<\\/li>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s+/g, '\\n')\n    .trim();\n}\n\nconst results = [];\n\npages.forEach((page, idx) => {\n  const title = page.title || page.slug || `Pagina ${idx + 1}`;\n  const slug = page.slug || `page_${page.id || idx}`;\n  \n  // Extract content from blocks\n  let content = '';\n  \n  if (Array.isArray(page.content)) {\n    // Block-based content (new format)\n    content = page.content.map(blockToText).filter(t => t.trim()).join('\\n');\n  } else if (typeof page.content === 'string') {\n    // Old format - string content\n    content = cleanHtml(page.content);\n  }\n  \n  content = content.trim();\n  \n  if (content.length < 50) {\n    console.log(`Skip page \"${title}\": only ${content.length} chars`);\n    return;\n  }\n  \n  // Build full document with title\n  const fullText = `${title}\\n\\n${content}`;\n  const fileName = `inginerie_${slug}.txt`.replace(/[^\\w_.-]/g, '_');\n  \n  console.log(`Page \"${title}\": ${fullText.length} chars`);\n  \n  results.push({\n    json: {\n      text: fullText,\n      metadata: {\n        source_file: fileName,\n        source_url: `https://inginerie.ulbsibiu.ro/dep.cie/`,\n        file_type: 'web_page',\n        page_title: title,\n        page_slug: slug,\n        ingested_at: new Date().toISOString(),\n        char_count: fullText.length\n      }\n    }\n  });\n});\n\nconsole.log(`Total pages to ingest: ${results.length}`);\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        48
+      ],
+      "id": "b029290b-6dda-4926-a24c-76e9e43ba1e3",
+      "name": "Parse Pages"
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "source",
+                "value": "={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "source_file",
+                "value": "={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "source_url",
+                "value": "={{ $json.metadata.source_url }}"
+              },
+              {
+                "name": "page_title",
+                "value": "={{ $json.metadata.page_title }}"
+              },
+              {
+                "name": "chunk_index",
+                "value": "={{ $itemIndex }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        144
+      ],
+      "id": "68f3f8d1-0340-4740-afc7-092160285f1c",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "chunkSize": 1200,
+        "chunkOverlap": 100,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        528,
+        256
+      ],
+      "id": "3c1d072c-f9fa-48f8-8459-88c967c5ad9f",
+      "name": "Recursive Character Text Splitter"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        144,
+        176
+      ],
+      "id": "10142e26-c070-4a76-9edd-c78ddef11fd8",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "OAGzHqLWpF1x5Ofm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "ulbs_documents",
+          "mode": "list",
+          "cachedResultName": "ulbs_documents"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        144,
+        0
+      ],
+      "id": "e31b272e-177c-4136-9d8b-254264016b1e",
+      "name": "Insert Pages to Qdrant",
+      "credentials": {
+        "qdrantApi": {
+          "id": "AteJ0CZnuqc8baxq",
+          "name": "Qdrant account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "source",
+                "value": "={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "source_file",
+                "value": "={{ $json.metadata.source_file }}"
+              },
+              {
+                "name": "source_url",
+                "value": "={{ $json.metadata.source_url }}"
+              },
+              {
+                "name": "page_title",
+                "value": "={{ $json.metadata.page_title }}"
+              },
+              {
+                "name": "chunk_index",
+                "value": "={{ $itemIndex }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        496
+      ],
+      "id": "6cda8f10-c50a-4a7c-8af2-b4cf24eb66df",
+      "name": "Default Data Loader1"
+    },
+    {
+      "parameters": {
+        "chunkSize": 800,
+        "chunkOverlap": 100,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        496,
+        624
+      ],
+      "id": "12ad7354-b602-4705-94aa-dd20818a3462",
+      "name": "Recursive Character Text Splitter1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        528
+      ],
+      "id": "23845b98-c6c7-49f1-8851-51c8407d23d6",
+      "name": "Embeddings OpenAI1",
+      "credentials": {
+        "openAiApi": {
+          "id": "OAGzHqLWpF1x5Ofm",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "ulbs_documents",
+          "mode": "list",
+          "cachedResultName": "ulbs_documents"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        176,
+        336
+      ],
+      "id": "83cfb898-fa3f-4d26-9fad-c46301777339",
+      "name": "Insert Pages to Qdrant1",
+      "credentials": {
+        "qdrantApi": {
+          "id": "AteJ0CZnuqc8baxq",
+          "name": "Qdrant account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://inginerie.ulbsibiu.ro/dep.cie/api/public/news?locale=ro&per_page=10&page=1",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "lowercaseHeaders": false,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -336,
+        320
+      ],
+      "id": "97a4061c-9df0-4b10-ab7f-1a9b54e03c18",
+      "name": "Fetch News API"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse news API response - 1 chunk per news item\nconst firstItem = $input.first().json;\n\n// Detectează structura: cu sau fără body wrapper\nlet response;\nif (firstItem.body) {\n  // Răspuns wrapped din HTTP Request cu Include Response Headers\n  response = firstItem.body;\n} else {\n  response = firstItem;\n}\n\nlet newsItems = [];\nif (response.data && Array.isArray(response.data)) {\n  newsItems = response.data;\n} else if (Array.isArray(response)) {\n  newsItems = response;\n}\n\nconsole.log(`Found ${newsItems.length} news items`);\n\nconst results = [];\n\nnewsItems.forEach((item, idx) => {\n  // Title poate fi în translations sau direct\n  let title = item.title;\n  let content = item.content || item.body || item.description || '';\n  \n  // Verifică translations (cum am văzut în imagine, content e acolo)\n  if (item.translations && Array.isArray(item.translations) && item.translations.length > 0) {\n    const ro = item.translations.find(t => t.locale === 'ro') || item.translations[0];\n    if (ro) {\n      title = ro.title || title;\n      content = ro.content || ro.body || ro.description || content;\n    }\n  }\n  \n  // Fallback\n  title = title || item.slug || `Anunț ${idx + 1}`;\n  \n  // Clean HTML\n  content = String(content)\n    .replace(/<script\\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, '')\n    .replace(/<style\\b[^<]*(?:(?!<\\/style>)<[^<]*)*<\\/style>/gi, '')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, ' ')\n    .trim();\n  \n  if (content.length < 30) {\n    console.log(`Skipping \"${title}\": content too short (${content.length} chars)`);\n    return;\n  }\n  \n  const date = item.published_at || item.created_at || '';\n  const slug = item.slug || `news_${item.id || idx}`;\n  const fileName = `inginerie_news_${slug}.txt`.replace(/[^\\w_.-]/g, '_');\n  \n  const fullText = `${title}\\n${date ? `Data: ${date}\\n` : ''}\\n${content}`;\n  \n  console.log(`News \"${title}\": ${fullText.length} chars`);\n  \n  results.push({\n    json: {\n      text: fullText,\n      metadata: {\n        source_file: fileName,\n        source_url: `https://inginerie.ulbsibiu.ro/dep.cie/`,\n        file_type: 'news',\n        news_title: title,\n        news_date: date,\n        ingested_at: new Date().toISOString(),\n        char_count: fullText.length\n      }\n    }\n  });\n});\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        320
+      ],
+      "id": "8e8d718c-1f6b-41a0-b771-12cc99495819",
+      "name": "Parse News"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════\n// Filter Junk Content — runs after Parse, before Loader\n//\n// Removes documents that are too short to be useful for RAG\n// and cleans common scraping artifacts. Does NOT reject tables\n// or pages with short structured lines (e.g., tutori, calendar).\n// ════════════════════════════════════════════════════════\n\nconst items = $input.all();\nconst validItems = [];\n\nconst MIN_CONTENT_LENGTH = 80;  // lowered from 100 to keep short but useful pages\n\nfor (const item of items) {\n  let content = item.json.content || item.json.text || item.json.body || '';\n  \n  if (typeof content !== 'string') {\n    content = String(content);\n  }\n  \n  // ── 1. Basic cleanup ──\n  let cleaned = content\n    .trim()\n    .replace(/\\r\\n/g, '\\n')              // normalize line endings\n    .replace(/\\n{3,}/g, '\\n\\n')          // collapse 3+ newlines to 2\n    .replace(/[ \\t]{2,}/g, ' ')          // collapse multiple spaces/tabs\n    .replace(/^\\s+|\\s+$/gm, '')          // trim each line\n    .replace(/(.)\\1{15,}/g, '$1$1$1');   // collapse char repetitions (e.g., \"------\")\n  \n  // ── 2. Reject if too short after cleanup ──\n  if (cleaned.length < MIN_CONTENT_LENGTH) {\n    console.log(`Skipping short content (${cleaned.length} chars) from: ${item.json.source_url || item.json.url || item.json.title || 'unknown'}`);\n    continue;\n  }\n  \n  // ── 3. Pass through with cleaned content ──\n  // NOTE: removed the \"avgLineLength < 20\" check that was rejecting\n  // legitimate structured content (tables of tutors, schedules, etc.)\n  validItems.push({\n    json: {\n      ...item.json,\n      content: cleaned,\n    },\n  });\n}\n\nconsole.log(`Filter: ${items.length} in, ${validItems.length} out`);\nreturn validItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "64bb8350-f357-401f-98f0-eca68786c672",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════\n// Filter Junk Content — runs after Parse, before Loader\n//\n// Removes documents that are too short to be useful for RAG\n// and cleans common scraping artifacts. Does NOT reject tables\n// or pages with short structured lines (e.g., tutori, calendar).\n// ════════════════════════════════════════════════════════\n\nconst items = $input.all();\nconst validItems = [];\n\nconst MIN_CONTENT_LENGTH = 80;  // lowered from 100 to keep short but useful pages\n\nfor (const item of items) {\n  let content = item.json.content || item.json.text || item.json.body || '';\n  \n  if (typeof content !== 'string') {\n    content = String(content);\n  }\n  \n  // ── 1. Basic cleanup ──\n  let cleaned = content\n    .trim()\n    .replace(/\\r\\n/g, '\\n')              // normalize line endings\n    .replace(/\\n{3,}/g, '\\n\\n')          // collapse 3+ newlines to 2\n    .replace(/[ \\t]{2,}/g, ' ')          // collapse multiple spaces/tabs\n    .replace(/^\\s+|\\s+$/gm, '')          // trim each line\n    .replace(/(.)\\1{15,}/g, '$1$1$1');   // collapse char repetitions (e.g., \"------\")\n  \n  // ── 2. Reject if too short after cleanup ──\n  if (cleaned.length < MIN_CONTENT_LENGTH) {\n    console.log(`Skipping short content (${cleaned.length} chars) from: ${item.json.source_url || item.json.url || item.json.title || 'unknown'}`);\n    continue;\n  }\n  \n  // ── 3. Pass through with cleaned content ──\n  // NOTE: removed the \"avgLineLength < 20\" check that was rejecting\n  // legitimate structured content (tables of tutors, schedules, etc.)\n  validItems.push({\n    json: {\n      ...item.json,\n      content: cleaned,\n    },\n  });\n}\n\nconsole.log(`Filter: ${items.length} in, ${validItems.length} out`);\nreturn validItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        336
+      ],
+      "id": "d18ed1e9-ab2b-44a5-9743-0558946065ff",
+      "name": "Code in JavaScript1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pages API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch News API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pages API": {
+      "main": [
+        [
+          {
+            "node": "Parse Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert Pages to Qdrant",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert Pages to Qdrant",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pages": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader1": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert Pages to Qdrant1",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter1": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader1",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert Pages to Qdrant1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch News API": {
+      "main": [
+        [
+          {
+            "node": "Parse News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse News": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Insert Pages to Qdrant1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Insert Pages to Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c9fba166-1e5a-463e-9a54-ee40bc84b38e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "993386d53a6fd1f5591e5027937cdeb2550d050a1823a84e64c1454bda54f768"
+  },
+  "id": "8ETSnYGqKJklnHbB",
+  "tags": []
+}
