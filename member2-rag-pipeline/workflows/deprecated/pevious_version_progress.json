@@ -1,0 +1,621 @@
+{
+  "name": "Versiune_anterioara_progress",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const inputJson = $input.first().json;\nlet body = inputJson.body || inputJson;\n\nif (typeof body === 'string') {\n  try { body = JSON.parse(body); } catch (e) { body = {}; }\n}\n\nconst query = String(body.query || body.message || '').trim();\nconst sessionId = String(body.session_id || 'anonymous');\n\nif (!query || query.length < 1) {\n  return [{\n    json: {\n      query: '',\n      session_id: sessionId,\n      start_time: Date.now(),\n      is_empty: true\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    query: query,\n    query_original: query,\n    session_id: sessionId,\n    start_time: Date.now(),\n    is_empty: false\n  }\n}];"
+      },
+      "id": "8872b304-a133-4d28-a06a-b5b6225e7b2e",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        128
+      ],
+      "notes": "Extracts query and session_id from the POST body. Records start time for latency tracking."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "5927c22e-e633-41d1-82f2-7ff9371a8da9",
+              "leftValue": "={{ $json.is_empty }}",
+              "rightValue": "   is empty",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0027778-08de-497a-a4a9-e96ad5646bee",
+      "name": "Empty Query Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        128
+      ],
+      "notes": "Routes empty queries directly to error response"
+    },
+    {
+      "parameters": {
+        "workflowId": "L4p5ga24p1Kf3cbf",
+        "options": {}
+      },
+      "id": "fbd7cf45-addc-4928-ad55-006dd6b8b746",
+      "name": "Ethics Guardrails (Sub-Workflow)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        -512,
+        192
+      ],
+      "notes": "Calls Member 3's guardrail sub-workflow. Returns {passed: bool, category: string, rejection_message: string|null}. See workflow_guardrails.json."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.passed }}",
+              "value2": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "756c5638-71f4-422f-8348-3a1749a36be0",
+      "name": "Guardrail Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        208
+      ],
+      "notes": "If guardrails passed → continue to RAG. If rejected → return rejection message."
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "5e29b830-bf58-4895-900c-747cdb6aaf2c",
+      "name": "Embed Query",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        -96
+      ],
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "openAiApi": {
+          "id": "zpTTgk2KemSjlqUy",
+          "name": "OpenAI BCETD"
+        }
+      },
+      "disabled": true,
+      "notes": "CRITICAL: Must use the SAME embedding model as the ingestion pipeline. OpenAI text-embedding-3-small (1536 dims). Switch to Ollama nomic-embed-text if using local embeddings."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prag de relevanță testat anterior\nconst RELEVANCE_THRESHOLD = 0.40; \n\nconst items = $input.all();\n\n// 1. Încercăm să luăm query-ul din mai multe surse pentru a preveni pierderea lui\nconst query = items[0]?.json?.query || \n              $('Chat Webhook').first()?.json?.chatInput || \n              $('Chat Webhook').first()?.json?.body?.query || \n              '';\n\nconst results = items[0]?.json?.results || items[0]?.json?.sourceDocuments || items;\n\nlet chunks = [];\n\nfor (const result of results) {\n  const data = result.json || result;\n  const score = data.score || 0;\n  \n  // Săpăm în structura \"document\" văzută în debug\n  const doc = data.document || data; \n  const text = doc.pageContent || doc.text || '';\n  const metadata = doc.metadata || {};\n  \n  if (score >= RELEVANCE_THRESHOLD) {\n    chunks.push({\n      text: text,\n      score: score,\n      // Identificăm sursa cu fallback pentru a evita \"blob\" sau \"unknown\"\n      source: metadata.source_file || metadata.source || metadata.file_name || 'Document Universitate',\n      chunk_id: metadata.chunk_id || ''\n    });\n  }\n}\n\n// 2. Sortăm după scor\nchunks.sort((a, b) => b.score - a.score);\n\n// 3. IMPORTANT: Luăm primele 6 rezultate (slice 0, 6)\n// Asta rezolvă problema duplicatelor: chiar dacă primul fișier ocupă primele 2-3 locuri, \n// restul locurilor vor fi ocupate de materiile din fișierul nou.\nconst topChunks = chunks.slice(0, 6);\n\nconst topScore = topChunks.length > 0 ? topChunks[0].score : 0;\nconst hasRelevantResults = topChunks.length > 0;\n\n// Construim contextul pentru AI\nconst contextStr = topChunks.map((c, i) => \n  `[Sursa ${i+1}: ${c.source} | Scor: ${(c.score * 100).toFixed(1)}%]\\n${c.text}`\n).join('\\n\\n---\\n\\n');\n\n// Lista unică de surse\nconst sources = [...new Set(topChunks.map(c => c.source))];\n\nreturn [{\n  json: {\n    has_relevant_results: hasRelevantResults,\n    top_score: topScore,\n    num_chunks_above_threshold: topChunks.length,\n    context: contextStr,\n    sources: sources,\n    threshold_used: RELEVANCE_THRESHOLD,\n    query: query // Trimitem query-ul mai departe pentru LLM\n  }\n}];"
+      },
+      "id": "428827b0-ac7f-4f72-b92d-b991cc946115",
+      "name": "Relevance Threshold Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        384
+      ],
+      "notes": "Filters chunks with score >= 0.72. If no chunk passes, triggers fallback 'I don't have this information' response. Top 3 chunks are kept for prompt construction."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_relevant_results }}",
+              "value2": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3a3b7719-21ca-4957-af24-25a77ad337e5",
+      "name": "Has Relevant Results?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        464
+      ],
+      "notes": "Routes to LLM if relevant chunks found, otherwise to fallback response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// BUILD THE RAG PROMPT - Improved version\n// Mai puțin conservator, mai flexibil cu interpretarea contextului\n\nconst inputData = $input.first().json;\n\nconst context = inputData.context || '';\nconst sources = inputData.sources || [];\nconst query = inputData.query || inputData.query_original || '';\n\nconst systemPrompt = `You are the ULBS Academic Assistant (CHATBOT BCETD), an official AI assistant for Universitatea Lucian Blaga din Sibiu.\n\n## YOUR ROLE\nHelp students by answering their questions using the information provided in [CONTEXT]. Synthesize, combine, and reformulate information when needed to give helpful answers.\n\n## RULES\n\n1. **USE the [CONTEXT] as your primary source of information.** Combine information from multiple chunks when relevant.\n\n2. **BE HELPFUL, NOT OVERLY CAUTIOUS.** If the context contains information that PARTIALLY answers the question, give that information and clarify what you don't know.\n\n3. **REFORMULATE AND SYNTHESIZE.** The student's question may not match the exact wording in the context. Find relevant information based on meaning, not exact words. For example:\n   - \"Ce materii am la informatica?\" matches context that mentions \"Materii de studiu pentru Informatica\"\n   - \"Cand incepe anul?\" matches \"Calendarul academic\" with start dates\n   - \"Cat costa scoala?\" matches \"Taxe de scolarizare\"\n\n4. **ONLY say \"Nu am informații\" when the context truly has NOTHING related to the question.** Don't refuse just because the wording differs.\n\n5. **NEVER invent facts not in the context.** But you CAN combine, summarize, and explain information that IS there.\n\n6. **ANSWER in the same language as the question** (Romanian or English).\n\n7. **CITE your sources** at the end of the answer using this format: \"📄 Sursa: [filename]\". If multiple sources, list all.\n\n8. **BE CONCISE but COMPLETE.** Give the relevant information from context, structured with bullet points or short paragraphs.\n\n## FALLBACK MESSAGE\nOnly if the context is COMPLETELY unrelated to the question (no overlap at all), say:\n\"Nu am găsit informații specifice despre [topic] în documentele disponibile. Vă recomand să contactați secretariatul facultății pentru detalii suplimentare.\"\n\n## CONTEXT FROM UNIVERSITY DOCUMENTS:\n${context}\n## END OF CONTEXT\n\nNow answer the student's question using the context above. Be helpful and synthesize information when needed.`;\n\nconst userMessage = `Student question: ${query}`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    user_message: userMessage,\n    query: query,\n    sources: sources,\n    context_length: context ? context.length : 0\n  }\n}];"
+      },
+      "id": "07b2e833-9be6-46fd-b02c-b4779abf9e63",
+      "name": "Build RAG Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        400
+      ],
+      "notes": "Constructs the system prompt + user message for the LLM. System prompt enforces context-only answering, citation, and bilingual support (Romanian/English)."
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.system_prompt }}",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.user_message }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 800,
+          "temperature": 0.1,
+          "topP": 0.9
+        }
+      },
+      "id": "712f47ce-105c-458d-b328-b572521d4cff",
+      "name": "OpenAI GPT-4o-mini",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [
+        -352,
+        400
+      ],
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "openAiApi": {
+          "id": "zpTTgk2KemSjlqUy",
+          "name": "OpenAI BCETD"
+        }
+      },
+      "notes": "Temperature 0.1 for factual, deterministic answers. Max 800 tokens to keep responses concise. Alternative: Switch to Ollama Llama 3.1 8B node for local deployment."
+    },
+    {
+      "parameters": {
+        "jsCode": "// FORMAT FINAL RESPONSE\nconst llmAnswer = $input.first().json.validated_answer || $input.first().json.answer || '';\nconst sources = $('Build RAG Prompt').first().json.sources || [];\nconst startTime = $('Parse Request').first().json.start_time;\nconst responseTime = Date.now() - startTime;\nconst query = $('Parse Request').first().json.query;\nconst topScore = $('Relevance Threshold Check').first().json.top_score;\n\n// Format source citations\nconst sourceCitation = sources.length > 0 \n  ? `\\n\\n📄 **Surse:** ${sources.join(', ')}` \n  : '';\n\nconst response = {\n  answer: llmAnswer + sourceCitation,\n  sources: sources,\n  confidence: topScore,\n  response_time_ms: responseTime\n};\n\n// Also prepare analytics payload for async logging\nconst analyticsPayload = {\n  query_hash: require('crypto').createHash('sha256').update(query.toLowerCase().trim()).digest('hex'),\n  category: $('Ethics Guardrails (Sub-Workflow)').first()?.json?.category || 'ACADEMIC',\n  match_score: topScore,\n  response_ms: responseTime,\n  docs_matched: sources,\n  was_answered: true,\n  session_id: $('Parse Request').first().json.session_id,\n  created_at: new Date().toISOString()\n};\n\nreturn [\n  { json: { type: 'response', ...response } },\n  { json: { type: 'analytics', ...analyticsPayload } }\n];"
+      },
+      "id": "8ba1aa57-9e64-4871-9c5c-09d9373bb19c",
+      "name": "Format Response + Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        400
+      ],
+      "notes": "Formats the final response with source citations. Also prepares an analytics payload for async logging (Member 4's branch)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.type }}",
+              "value2": "response"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2ebed016-6507-499b-a0bb-dce7fac9959d",
+      "name": "Split Response / Analytics",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        352,
+        384
+      ],
+      "notes": "Splits the output: 'response' goes to webhook reply, 'analytics' goes to Member 4's async logging branch"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $json.answer, sources: $json.sources, confidence: $json.confidence }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "148c91fa-af2b-4bbb-9f54-451e6ed243e1",
+      "name": "Send Response to Student",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        624,
+        288
+      ],
+      "notes": "Returns JSON response to the frontend chat UI"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ANALYTICS BRANCH (Async — does not block response)\n// This data goes to Member 4's PostgreSQL logging workflow\nreturn [$input.first()];"
+      },
+      "id": "cbc4c62c-02a2-42c4-b8f3-1815bc56bfda",
+      "name": "Analytics Branch (→ Member 4)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        496
+      ],
+      "notes": "Passes analytics payload to Member 4's PostgreSQL logging sub-workflow. Runs async — never delays the student's response."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: 'Nu am găsit informații suficiente în documentele disponibile despre acest subiect. Vă recomand să contactați secretariatul facultății sau biroul decanatului.', sources: [], confidence: 0, fallback: true }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "c33ea829-c00c-47ef-aaf5-82bbe6cbee5e",
+      "name": "Fallback: No Relevant Documents",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        544
+      ],
+      "notes": "Returned when no document chunks scored above the 0.72 relevance threshold. Directs students to human support."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $json.rejection_message || 'Această întrebare nu este legată de serviciile universitare. Vă rog să reformulați întrebarea.', sources: [], confidence: 0, rejected: true, reason: $json.category || 'REJECTED' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "5326b03f-0808-44b9-af69-33344f1eb3d4",
+      "name": "Guardrail Rejection Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        80
+      ],
+      "notes": "Returned when Member 3's guardrails reject the query (off-topic, inappropriate, injection attempt)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $json.rejection_message || 'Vă rog să introduceți o întrebare.', sources: [], confidence: 0 }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "1ff2f746-9ed5-49e5-acb5-2a103444cb40",
+      "name": "Empty Query Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -512,
+        0
+      ],
+      "notes": "Returned for empty/missing query strings"
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "qdrantCollection": {
+          "__rl": true,
+          "mode": "list",
+          "value": "ulbs_documents"
+        },
+        "prompt": "={{ $('Chat Webhook').item.json.body.query }}",
+        "topK": 15,
+        "includeDocumentMetadata": "={{ true }}",
+        "options": {}
+      },
+      "id": "f12235fc-af85-44f5-b010-85e903c07b12",
+      "name": "Qdrant Local",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [
+        -1264,
+        464
+      ],
+      "credentials": {
+        "qdrantApi": {
+          "id": "ohKUzAWtsKAIsdDW",
+          "name": "Qdrant account"
+        }
+      },
+      "notes": "Cosine similarity search. Returns top-5 chunks with scores. Score threshold applied in next node (not here) for better control."
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1264,
+        656
+      ],
+      "id": "9dbf34d7-fd12-4926-a157-187dfb92921f",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "zpTTgk2KemSjlqUy",
+          "name": "OpenAI BCETD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "5e93fe2d-2b24-456c-9e6b-6fa1fe9b0473",
+      "name": "Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1168,
+        128
+      ],
+      "webhookId": "bcetd-chat-endpoint",
+      "notes": "POST /webhook/chat — receives {\"query\": \"student question\", \"session_id\": \"uuid\"} from the frontend"
+    },
+    {
+      "parameters": {
+        "workflowId": "kxRoZj1LeeWLj7cU",
+        "options": {}
+      },
+      "id": "12400114-8b27-4184-9b67-efb7cd765d83",
+      "name": "Output Validation (Layer 3)1",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        432
+      ],
+      "notes": "Member 3's Layer 3 post-LLM check. Verifies source grounding, detects hallucination, applies confidence gating. See guardrails workflow."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Empty Query Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empty Query Check": {
+      "main": [
+        [
+          {
+            "node": "Empty Query Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ethics Guardrails (Sub-Workflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ethics Guardrails (Sub-Workflow)": {
+      "main": [
+        [
+          {
+            "node": "Guardrail Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrail Gate": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Local",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardrail Rejection Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relevance Threshold Check": {
+      "main": [
+        [
+          {
+            "node": "Has Relevant Results?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Relevant Results?": {
+      "main": [
+        [
+          {
+            "node": "Build RAG Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback: No Relevant Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build RAG Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI GPT-4o-mini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4o-mini": {
+      "main": [
+        [
+          {
+            "node": "Output Validation (Layer 3)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response + Analytics": {
+      "main": [
+        [
+          {
+            "node": "Split Response / Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Response / Analytics": {
+      "main": [
+        [
+          {
+            "node": "Send Response to Student",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analytics Branch (→ Member 4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Local": {
+      "main": [
+        [
+          {
+            "node": "Relevance Threshold Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Local",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Validation (Layer 3)1": {
+      "main": [
+        [
+          {
+            "node": "Format Response + Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1ba068ff-190f-4fc4-a6ac-5e273ac500ed",
+  "meta": {
+    "instanceId": "60f0e9895ac00a3358b9443ed8c374cee94610b5021ba8b8b2cad8a2c24f2fc4"
+  },
+  "id": "YR6lRJcVrYhh7OiV",
+  "tags": []
+}
