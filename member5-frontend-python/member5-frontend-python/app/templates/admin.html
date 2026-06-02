@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}BCETD Admin — Analytics Dashboard{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block body %}
+
+<!-- ══════════════════════════════════════════════
+     LOGIN OVERLAY — shown until correct password
+     ══════════════════════════════════════════════ -->
+<div class="login-overlay" id="login-overlay" role="dialog" aria-modal="true" aria-label="Admin authentication">
+  <div class="login-card">
+
+    <div class="login-logo">
+      <span>UB</span>
+    </div>
+
+    <div class="login-brand">BCETD</div>
+    <div class="login-subtitle">Analytics Dashboard — Admin Access</div>
+
+    <form class="login-form" onsubmit="handleLogin(event)" autocomplete="off">
+      <div class="login-field">
+        <label for="admin-password">Parolă administrator</label>
+        <div class="login-input-wrap">
+          <input
+            type="password"
+            id="admin-password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            autofocus
+          >
+          <button type="button" class="toggle-pw" onclick="togglePassword()" aria-label="Arată/ascunde parola">
+            <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="login-error" id="login-error" aria-live="polite"></div>
+      </div>
+
+      <button type="submit" class="login-btn" id="login-btn">
+        <span id="login-btn-text">Autentificare</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </form>
+
+    <div class="login-footer">
+      Acces restricționat — doar pentru administratori ULBS
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     DASHBOARD — hidden until authenticated
+     ══════════════════════════════════════════════ -->
+<div id="dashboard-root" style="display:none">
+
+  <header class="header">
+    <h1>BCETD Analytics Dashboard</h1>
+    <div class="header-right">
+      <a href="{{ url_for('chat.index') }}">← Chat Interface</a>
+      <span id="refresh-time">Loading...</span>
+      <button class="btn-logout" onclick="handleLogout()" title="Deconectare">⏻</button>
+    </div>
+  </header>
+
+  <div class="dashboard">
+    <div class="stat-card">
+      <div class="label">Queries (7 days)</div>
+      <div class="value" id="val-queries-7d">&mdash;</div>
+      <div class="sub" id="sub-queries-24h">Last 24h: &mdash;</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Success rate</div>
+      <div class="value" id="val-success-rate">&mdash;</div>
+      <div class="sub">Queries answered / total</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg response time</div>
+      <div class="value" id="val-response-time">&mdash;</div>
+      <div class="sub">Milliseconds (answered only)</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Unique sessions</div>
+      <div class="value" id="val-sessions">&mdash;</div>
+      <div class="sub">Last 7 days</div>
+    </div>
+
+    <div class="panel wide">
+      <h3>Daily query volume (last 30 days)</h3>
+      <canvas id="chart-daily" height="200"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Query categories</h3>
+      <canvas id="chart-categories" height="200"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Peak usage hours</h3>
+      <canvas id="chart-hourly" height="200"></canvas>
+    </div>
+
+    <div class="panel wide">
+      <h3>Most referenced documents</h3>
+      <div id="table-documents"><div class="loading">Loading...</div></div>
+    </div>
+    <div class="panel wide">
+      <h3>Category breakdown</h3>
+      <div id="table-categories"><div class="loading">Loading...</div></div>
+    </div>
+  </div>
+
+</div><!-- /dashboard-root -->
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+
+<script>
+/* ── Admin login — client-side gate ──────────────────────────
+   NOTE: For real security, implement server-side session auth
+   in admin.py. This is a UX-layer password prompt only.
+   The actual password should be moved to an env variable and
+   verified server-side via a POST /admin/login endpoint.
+   ─────────────────────────────────────────────────────────── */
+const ADMIN_PW_HASH = "{{ admin_pw_hash | default('') }}";
+const SESSION_KEY   = "bcetd_admin_auth";
+
+function simpleHash(str) {
+  /* djb2-style hash — good enough for a UX gate, not crypto */
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h) ^ str.charCodeAt(i);
+    h = h >>> 0;
+  }
+  return h.toString(16);
+}
+
+function checkSession() {
+  return sessionStorage.getItem(SESSION_KEY) === "1";
+}
+
+function showDashboard() {
+  document.getElementById("login-overlay").style.display = "none";
+  document.getElementById("dashboard-root").style.display = "";
+  if (typeof loadAll === "function") loadAll();
+}
+
+function handleLogin(e) {
+  e.preventDefault();
+  const pw   = document.getElementById("admin-password").value;
+  const btn  = document.getElementById("login-btn");
+  const err  = document.getElementById("login-error");
+  const text = document.getElementById("login-btn-text");
+
+  err.textContent = "";
+  btn.classList.add("loading");
+  text.textContent = "Verificare...";
+
+  /* Small delay for UX — prevents instant brute-force feel */
+  setTimeout(() => {
+    const hash = simpleHash(pw);
+
+    /* If server provided a hash via template, use it; otherwise
+       fall back to a default dev password "admin1234"          */
+    const target = ADMIN_PW_HASH || simpleHash("admin1234");
+
+    if (hash === target) {
+      sessionStorage.setItem(SESSION_KEY, "1");
+      document.getElementById("login-overlay").classList.add("success");
+      setTimeout(showDashboard, 500);
+    } else {
+      btn.classList.remove("loading");
+      text.textContent = "Autentificare";
+      err.textContent = "Parolă incorectă. Încearcă din nou.";
+      document.getElementById("admin-password").value = "";
+      document.getElementById("admin-password").focus();
+      document.getElementById("login-card") && document.getElementById("login-card").classList.add("shake");
+    }
+  }, 380);
+}
+
+function handleLogout() {
+  sessionStorage.removeItem(SESSION_KEY);
+  document.getElementById("dashboard-root").style.display = "none";
+  document.getElementById("login-overlay").style.display = "";
+  document.getElementById("login-overlay").classList.remove("success");
+  document.getElementById("admin-password").value = "";
+  document.getElementById("admin-password").focus();
+}
+
+function togglePassword() {
+  const inp = document.getElementById("admin-password");
+  inp.type  = inp.type === "password" ? "text" : "password";
+}
+
+/* On load — check session */
+document.addEventListener("DOMContentLoaded", () => {
+  if (checkSession()) {
+    showDashboard();
+  }
+});
+</script>
+{% endblock %}

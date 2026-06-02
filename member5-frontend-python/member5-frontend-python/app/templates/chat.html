@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}ULBS Asistent Academic — CHATBOT BCETD{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+{% endblock %}
+
+{% block body %}
+<!-- Header -->
+<header class="header">
+  <div class="header-logo">UB</div>
+  <div class="header-text">
+    <div class="header-title">ULBS Asistent Academic</div>
+    <div class="header-subtitle">Universitatea Lucian Blaga din Sibiu</div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot"></div>
+    <span>Online</span>
+  </div>
+  <button class="btn-clear" onclick="clearChat()" title="Sterge conversatia">Conversatie noua</button>
+</header>
+
+<!-- Chat messages -->
+<div class="chat-container" id="chat-container">
+  <div class="chat-inner" id="chat-inner">
+
+    <!-- Welcome screen -->
+    <div class="welcome" id="welcome-screen">
+      <div class="welcome-icon">🎓</div>
+      <h2>Bine ai venit!</h2>
+      <p>Sunt asistentul academic al ULBS. Pot raspunde la intrebari despre cursuri,
+         examene, inscrieri, taxe, si alte informatii din documentele universitare oficiale.</p>
+      <div class="suggestions">
+        {% for suggestion in suggestions %}
+        <button class="suggestion-chip" onclick="askSuggestion(this)"><span>{{ suggestion }}</span></button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Typing indicator -->
+    <div class="typing-indicator" id="typing-indicator">
+      <div class="msg-avatar" style="background:linear-gradient(135deg,var(--gold),var(--gold-bright));color:var(--navy);">UB</div>
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Input area -->
+<div class="input-area">
+  <div class="input-inner">
+    <div class="input-wrapper">
+      <textarea id="query-input"
+        placeholder="Scrie o intrebare... / Ask a question..."
+        rows="1" maxlength="500"
+        onkeydown="handleKeydown(event)"
+        oninput="autoResize(this); updateCharCount()"></textarea>
+      <span class="char-count" id="char-count"></span>
+    </div>
+    <button id="send-btn" onclick="sendMessage()" disabled aria-label="Trimite mesaj">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+  <div class="input-footer">
+    Asistentul raspunde exclusiv din documentele oficiale ULBS. Nu stocheaza date personale.
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% endblock %}

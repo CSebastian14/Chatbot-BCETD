@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="{{ lang|default('ro') }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0D1B35">
+<meta name="description" content="ULBS BCETD — Asistent Academic Universitatea Lucian Blaga din Sibiu">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}ULBS BCETD{% endblock %}</title>
+
+<!-- Favicon SVG inline via data URI -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230D1B35'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-weight='900' font-size='14' text-anchor='middle' fill='%23C9AD5A'%3EUB%3C/text%3E%3C/svg%3E">
+
+<!-- Fonts: Syne (display) + DM Sans (body) + JetBrains Mono -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Global base styles -->
+<style>
+:root {
+  --navy:         #0D1B35;
+  --navy-mid:     #152343;
+  --navy-surface: #1C2E52;
+  --blue:         #1D6FE8;
+  --blue-bright:  #4A9DFF;
+  --gold:         #C9AD5A;
+  --gold-bright:  #F0D07A;
+  --coral:        #E8612D;
+  --mint:         #2EC490;
+  --cream:        #F6F4EE;
+  --white:        #FFFFFF;
+  --g50:          #F2F0EA;
+  --g100:         #E4E2DA;
+  --g200:         #CCCAC0;
+  --g400:         #9A9890;
+  --g600:         #6A6860;
+  --g800:         #2E2D28;
+  --font:         'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Syne', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  --r-sm: 10px; --r: 16px; --r-lg: 20px; --r-xl: 28px; --r-full: 9999px;
+  --shadow-sm: 0 2px 8px rgba(13,27,53,0.07);
+  --shadow-md: 0 6px 24px rgba(13,27,53,0.11);
+  --shadow-lg: 0 16px 48px rgba(13,27,53,0.16);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { font-family: var(--font); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+::selection { background: rgba(29,111,232,0.18); color: var(--navy); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--g200); border-radius: var(--r-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--g400); }
+</style>
+
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+{% block body %}{% endblock %}
+{% block scripts %}{% endblock %}
+</body>
+</html>
