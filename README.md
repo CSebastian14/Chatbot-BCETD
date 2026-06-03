@@ -63,7 +63,7 @@ For dynamic data such as the live class timetable, the system redirects students
                                        │ HTTP proxy
                           ┌────────────▼─────────────┐
                           │  n8n Workflow Engine     │   port 5678
-                          │  Owners: Members 2, 3, 4 │
+                          │  Owners: Members 2, 4    │
                           └─┬─────────┬─────────┬────┘
                             │         │         │
               ┌─────────────▼─┐  ┌────▼────┐  ┌─▼────────────────┐
@@ -122,7 +122,7 @@ The system message also encodes disambiguation rules for queries that could othe
 ### Member 3 — Ethics & Guardrails Engineer
 `member3-ethics-guardrails/`
 
-Owns the safety specification and validation. In the current architecture, the safety logic is implemented inline in the AI Agent's system message rather than as separate n8n workflows; see `member3-ethics-guardrails/workflows/deprecated/README.md` for the rationale and metrics that justified the consolidation.
+Owns the safety specification and validation. In the current architecture, the safety logic is implemented inline in the AI Agent's system message rather than as separate n8n workflows;
 
 Member 3 maintains ownership of:
 
@@ -139,7 +139,7 @@ Owns the PostgreSQL schema, the analytics API exposed to the admin dashboard, da
 
 Daily statistics are computed by a cron-scheduled n8n workflow that aggregates the previous day's logs and applies a 90-day retention purge on the raw log table. Aggregated daily tables are retained indefinitely.
 
-In the current architecture, analytics rows are inserted directly by the query pipeline through a Postgres node, replacing the original sub-workflow design (see `member4-analytics/workflows/deprecated/README.md` for the rationale and trade-off analysis).
+In the current architecture, analytics rows are inserted directly by the query pipeline through a Postgres node, replacing the original sub-workflow design.
 
 ### Member 5 — Frontend & Integration Engineer
 `member5-frontend-python/`
@@ -179,18 +179,13 @@ chatbot-bcetd/
 │   ├── blocklist.txt
 │   ├── adversarial_test_suite.json
 │   ├── test_guardrails.sh
-│   └── workflows/
-│       ├── README.md                    ← Explains absence of active workflows
-│       └── deprecated/                  ← Original layered guardrail workflows
-│           ├── M3- Ethics Guardrails (Sub-Workflow).json
-│           └── M3- Output Validation (Layer 3).json
+|   ├── GUARDRAILS_DOCUMENTATION.md
 │
 ├── member4-analytics/                   ← Database, dashboard, aggregation
 │   ├── sql/001_initial_schema.sql       ← Tables, views, functions
 │   ├── workflows/
 │   │   ├── workflow_analytics_api.json  ← Active (dashboard endpoints)
 │   │   ├── workflow_daily_stats.json    ← Active (cron aggregation)
-│   │   └── deprecated/                  ← Original logging sub-workflow
 │   ├── scripts/backup_database.sh
 │   └── grafana_dashboard.json
 │
@@ -220,8 +215,6 @@ Each `deprecated/README.md` explains what was retired, why, and what active comp
 | Location | Contains | Replaced by |
 |----------|----------|-------------|
 | `member2-rag-pipeline/workflows/deprecated/` | Earlier iteration of the query pipeline (`Versiune_anterioara_progress.json`) | The current 03_student_query_pipeline with consolidated Protocol A/B/C |
-| `member3-ethics-guardrails/workflows/deprecated/` | The original three-layer guardrail design (`M3- Ethics Guardrails (Sub-Workflow).json`, `M3- Output Validation (Layer 3).json`) | Safety logic moved inline into the AI Agent's system message |
-| `member4-analytics/workflows/deprecated/` | The original async logging sub-workflow (`workflow_analytics_logging.json`) | Direct PostgreSQL insert from the query pipeline |
 
 **Do not import deprecated workflows into a live n8n instance** — they may reference credentials or workflow IDs that no longer exist, and they have been superseded by simpler designs validated in production.
 
