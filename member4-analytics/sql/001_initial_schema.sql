@@ -3,8 +3,7 @@
 -- Member 4 Deliverable: Analytics & Database Engineer
 -- 
 -- Database: chatbot_stats (set via POSTGRES_DB env variable)
--- Run: psql -h localhost -U chatbot_user -d chatbot_stats -f 001_initial_schema.sql
--- ═══════════════════════════════════════════════════════════════
+-- Run: docker exec -i bcetd-postgres-v2 psql -U chatbot_user -d chatbot_stats < 001_initial_schema.sql
 
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -256,15 +255,3 @@ GROUP BY query_hash
 HAVING COUNT(*) >= 3
 ORDER BY ask_count DESC
 LIMIT 50;
-
--- ───────────────────────────────────────────────────
--- Grant permissions (adjust user as needed)
--- ───────────────────────────────────────────────────
--- GRANT SELECT, INSERT ON query_logs TO n8n_user;
--- GRANT SELECT, INSERT, UPDATE ON document_usage TO n8n_user;
--- GRANT SELECT ON v_daily_volume, v_category_breakdown, v_top_documents, 
---     v_hourly_pattern, v_failure_analysis, v_repeated_questions TO grafana_user;
-
--- ═══════════════════════════════════════════════════════════════
--- END OF MIGRATION v1.0
--- ═══════════════════════════════════════════════════════════════
