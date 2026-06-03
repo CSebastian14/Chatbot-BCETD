@@ -48,7 +48,6 @@ jobs:
             "member3-ethics-guardrails/adversarial_test_suite.json"
             "member3-ethics-guardrails/GUARDRAILS_DOCUMENTATION.md"
             "member4-analytics/sql/001_initial_schema.sql"
-            "member4-analytics/workflows/workflow_analytics_logging.json"
             "member4-analytics/workflows/workflow_daily_stats.json"
             "member4-analytics/workflows/workflow_analytics_api.json"
             "member5-frontend-python/Dockerfile"
